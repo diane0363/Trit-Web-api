@@ -1,89 +1,65 @@
 package net.dima.project.controller;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate;
-
-import java.util.Map;
 import java.util.UUID;
+
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import net.dima.project.dto.ChatApiResponseDTO;
+import net.dima.project.dto.ChatMetaDTO;
+import net.dima.project.dto.ChatRequestDTO;
+import net.dima.project.dto.FastApiChatResponseDTO;
+import net.dima.project.dto.SessionIdResponseDTO;
+import net.dima.project.service.chat.FastApiChatGatewayService;
 
 @RestController
 @RequestMapping("/api/chat")
 @CrossOrigin(origins = "*") // 필요 시 프론트 도메인으로 제한
 public class ChatApiController {
 
-    private final RestTemplate rest = new RestTemplate();
+    private final FastApiChatGatewayService fastApiChatGatewayService;
 
-    // application.properties 또는 환경변수로
-    @Value("${fastapi.base-url}")
-    private String fastApiBase;
-
-    @Value("${n8n.base-url}")
-    private String n8nBase;
-
-    // n8n Header Auth (Name=authorization, Value=kitadima2)
-    @Value("${n8n.api-key}")
-    private String n8nApiKey;
+    public ChatApiController(FastApiChatGatewayService fastApiChatGatewayService) {
+        this.fastApiChatGatewayService = fastApiChatGatewayService;
+    }
 
     /** 세션 생성 */
     @PostMapping("/{mode}/new-session")
-    public Map<String, String> newSession(@PathVariable("mode") String mode) {
-        return Map.of("sessionId", UUID.randomUUID().toString());
+    public SessionIdResponseDTO newSession(@PathVariable("mode") String mode) {
+        // 현재 구조에서는 서버에 세션 상태를 저장하지 않고, 클라이언트가 sessionId+chat_history를 들고 다니는 형태
+        return new SessionIdResponseDTO(UUID.randomUUID().toString());
     }
 
     /** 챗봇 요청 */
     @PostMapping("/{mode}")
-    public Map<String, Object> chat(@PathVariable("mode") String mode,
-            @RequestBody Map<String, Object> body) {
-
-        String targetUrl;
-        boolean callN8n = false;
-
-        switch (mode) {
-            case "hs":       targetUrl = fastApiBase + "/hs"; break;
-            case "nav":      targetUrl = fastApiBase + "/nav"; break;
-            case "glossary": targetUrl = fastApiBase + "/glossary"; break;
-            case "faq":      targetUrl = fastApiBase + "/faq"; break;
-            case "stats":    targetUrl = fastApiBase + "/chat/stats"; break; 
-            default:         return Map.of(
-                                     "reply", "알 수 없는 모드입니다.",
-                                     "meta", Map.of("mode", mode, "error", true)
-                                 );
-        }
-
+    public ChatApiResponseDTO chat(
+            @PathVariable("mode") String mode,
+            @RequestBody ChatRequestDTO body) {
         try {
-            // 헤더
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            if (callN8n && n8nApiKey != null && !n8nApiKey.isEmpty()) {
-                headers.set("authorization", n8nApiKey); // n8n Header Auth
-            }
+            FastApiChatResponseDTO resp = fastApiChatGatewayService.chat(mode, body);
 
-            // 요청
-            HttpEntity<Map<String, Object>> req = new HttpEntity<>(body, headers);
-            ResponseEntity<Map> resp = rest.postForEntity(targetUrl, req, Map.class);
+            String reply = (resp != null && resp.reply() != null) ? resp.reply() : "(응답 없음)";
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> respBody = (Map<String, Object>) resp.getBody();
+            return new ChatApiResponseDTO(
+                    reply,
+                    new ChatMetaDTO(mode, false),
+                    (resp != null) ? resp.chatHistory() : null);
 
-            Object reply = (respBody != null && respBody.get("reply") != null)
-                    ? respBody.get("reply")
-                    : "(응답 없음)";
-
-            return Map.of(
-                    "reply", reply,
-                    "meta", Map.of("mode", mode, "error", false)
-            );
+        } catch (IllegalArgumentException e) {
+            return new ChatApiResponseDTO(
+                    "알 수 없는 모드입니다.",
+                    new ChatMetaDTO(mode, true),
+                    null);
 
         } catch (Exception e) {
-            return Map.of(
-                    "reply", "연동 오류: " + e.getMessage(),
-                    "meta", Map.of("mode", mode, "error", true)
-            );
+            return new ChatApiResponseDTO(
+                    "연동 오류: " + e.getMessage(),
+                    new ChatMetaDTO(mode, true),
+                    null);
         }
     }
 }

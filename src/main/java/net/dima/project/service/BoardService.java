@@ -109,7 +109,8 @@ public class BoardService {
             BoardEntity entity = temp.get();
             boardDTO = BoardDTO.toDTO(entity); // 상세는 마스킹 없이
         }
-        if (boardDTO == null) return null;
+        if (boardDTO == null)
+            return null;
 
         String boardWriter = boardDTO.getBoardWriter(); // user_id
         String writerName = userService.findRealNameById(boardWriter);
@@ -121,14 +122,14 @@ public class BoardService {
     /** 조회수 증가 */
     @Transactional
     public void incrementHitcount(Long boardSeq) {
-        boardRepository.findById(boardSeq).ifPresent(entity ->
-                entity.setHitCount(entity.getHitCount() + 1));
+        boardRepository.findById(boardSeq).ifPresent(entity -> entity.setHitCount(entity.getHitCount() + 1));
     }
 
     /** 게시글 삭제 (첨부파일 포함) */
     public void deleteOne(Long boardSeq) {
         Optional<BoardEntity> temp = boardRepository.findById(boardSeq);
-        if (temp.isEmpty()) return;
+        if (temp.isEmpty())
+            return;
 
         BoardEntity entity = temp.get();
         String savedFilename = entity.getSavedFilename();
